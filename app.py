@@ -25,11 +25,12 @@ def compute_log_returns(df: pd.DataFrame) -> pd.DataFrame:
     return np.log(df / df.shift(1)).dropna()
 
 
-def simulate_gbm_paths(mu, cov, S0, n_steps=200, n_sims=10_000, dt=1 / 252):
+def simulate_gbm_paths(mu, cov, S0, n_steps=200, n_sims=10_000, dt=1.0):
     """
     Multi-asset GBM Monte Carlo using Cholesky for correlated shocks.
-    mu: (n_assets,)
-    cov: (n_assets, n_assets)
+    mu: mean daily LOG returns, shape (n_assets,)
+    cov: covariance of daily LOG returns, shape (n_assets, n_assets)
+    dt: step length in trading days (default one day), not years
     S0: (n_assets,)
     Returns array of shape (n_sims, n_steps, n_assets)
     """
@@ -39,7 +40,6 @@ def simulate_gbm_paths(mu, cov, S0, n_steps=200, n_sims=10_000, dt=1 / 252):
     n_assets = len(S0)
 
     L = np.linalg.cholesky(cov)
-    vol = np.sqrt(np.diag(cov))
 
     output = np.zeros((n_sims, n_steps, n_assets))
     for i in range(n_sims):
@@ -47,7 +47,7 @@ def simulate_gbm_paths(mu, cov, S0, n_steps=200, n_sims=10_000, dt=1 / 252):
         for t in range(n_steps):
             Z = np.random.normal(size=n_assets)
             correlated_Z = L @ Z
-            S = S * np.exp((mu - 0.5 * vol**2) * dt + correlated_Z * vol * np.sqrt(dt))
+            S = S * np.exp(mu * dt + correlated_Z * np.sqrt(dt))
             output[i, t, :] = S
     return output
 
@@ -90,20 +90,20 @@ def optimize_portfolio(sim_asset_returns, risk_measure="CVaR", alpha=5):
 # Plot helpers
 # -----------------------------
 
-def plot_single_ticker_paths(prices, ticker, n_steps=200, n_sims=10_000, dt=1 / 252):
+def plot_single_ticker_paths(prices, ticker, n_steps=200, n_sims=10_000, dt=1.0):
     df = prices.copy()
     df["Return"] = (df["Close"] / df["Close"].shift(1)).apply(lambda x: np.log(x))
     growth_rate = df["Return"].mean()
     std = df["Return"].std()
 
     output = np.zeros((n_sims, n_steps))
-    S0 = df["Close"].iloc[-1]
+    S0 = float(np.asarray(df["Close"].iloc[-1]).reshape(-1)[0])
 
     for i in range(n_sims):
         S = S0
         for j in range(n_steps):
             Z = np.random.normal()
-            S = S * np.exp((growth_rate - 0.5 * std**2) * dt + std * np.sqrt(dt) * Z)
+            S = S * np.exp(growth_rate * dt + std * np.sqrt(dt) * Z)
             output[i, j] = S
 
     time = np.arange(1, n_steps + 1)
@@ -344,5 +344,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
